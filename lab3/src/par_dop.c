@@ -94,8 +94,42 @@ int main(int argc, char **argv) {
   
   int delta = array_size/pnum;
   //
-  int f_pipes[2];
-  pipe(f_pipes);
+  
+char str[256];
+int procCount = 0;
+FILE *fp;
+
+if( (fp = fopen("/proc/cpuinfo", "r")) )
+{
+  while(fgets(str, sizeof str, fp))
+  if( !memcmp(str, "processor", 9) ) procCount++;
+}
+
+if ( !procCount ) 
+{ 
+printf("Unable to get proc count. Defaulting to 2");
+procCount=2;
+}
+
+printf("Proc Count:%d\n", procCount);
+      
+
+  int ncpus ;
+    ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+    printf("cpus: %d\n", ncpus);
+
+if ( pnum>ncpus*4 ) 
+{ 
+pnum=ncpus*4;
+}
+
+  
+  int f_pipes[pnum/4][2];
+  for (int i=0; i<pnum/4+1; i++) 
+  {
+        pipe(f_pipes[i]);
+  }
+
   /*
   int *pip_mass=malloc(sizeof(int) * pnum*2);
   for(int i=0; i<pnum*2; i+=2){
@@ -135,8 +169,12 @@ int main(int argc, char **argv) {
           fclose(fp);
         } else {
           // use pipe here
-          write(f_pipes[1], &ret, sizeof(struct MinMax));
+//          write(f_pipes[1], &ret, sizeof(struct MinMax));
           //write((pip_mass+i*2)[1], &ret, sizeof(struct MinMax));
+          for ( int i=0; i<pnum/4+1; i++)
+          {
+              write(f_pipes[i][1], &ret, sizeof(struct MinMax));
+          }
         }
         return 0;
       }
@@ -158,12 +196,14 @@ int main(int argc, char **argv) {
   min_max.min = INT_MAX;
   min_max.max = INT_MIN;
 
-  for (int i = 0; i < pnum; i++) {
+  for (int i = 0; i < pnum; i++) 
+  {
     int min = INT_MAX;
     int max = INT_MIN;
     struct MinMax *ret = malloc(sizeof(int)*2);
     
-    if (with_files) {
+    if (with_files)
+    {
         FILE *fp;
         char filename[255] = "paral_itog_";
         char numb[255] = "";
@@ -174,10 +214,15 @@ int main(int argc, char **argv) {
         fp = fopen(filename, "rb");
         fread(ret, sizeof(struct MinMax), 1, fp);
         fclose(fp);
-    } else {
+    } else 
+    {
       // read from pipes
-      read(f_pipes[0], ret, sizeof(struct MinMax));
+ //     read(f_pipes[0], ret, sizeof(struct MinMax));
       //read((pip_mass+i*2)[0], ret, sizeof(struct MinMax));
+      for (int i=0; i<pnum/4+1; i++)
+      {
+         read(f_pipes[i][0], ret, sizeof(struct MinMax));
+      }
     }
     
     min = ret->min;

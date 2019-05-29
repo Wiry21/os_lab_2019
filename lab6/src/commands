@@ -1,0 +1,11 @@
+cd os_lab_2019/lab6/src
+
+./server —port 20001 —tnum 10 —servers 10 
+./server —port 20002 —tnum 10 —servers 10 
+./server —port 20003 —tnum 10 —servers 10 
+./client —k 5 —mod 18 —servers 10 
+
+rm -f multmod.o libmultmod.a 
+gcc -o multmod.o -c multmod.c 
+ar rcs libmultmod.a multmod.o 
+rm -f multmod.o

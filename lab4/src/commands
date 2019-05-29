@@ -1,0 +1,35 @@
+cd os_lab_2019/lab4/src 
+
+
+touch parallel_min_max.c 
+
+rm parallel_min_max 
+rm process_memory 
+rm parallel_sum 
+rm zombie
+ 
+ 
+ gcc -c summ.c summ.h
+ ar rcs libsumm.a summ.o
+
+
+task 1
+
+
+
+./parallel_min_max --seed 444 --array_size 10 --pnum 4 --timeout 10
+
+task 2
+
+
+./zombie 
+
+task 3
+
+
+./process_memory 
+
+
+task 5
+
+./parallel_sum --seed 444 --array_size 1000 --threads_num 4

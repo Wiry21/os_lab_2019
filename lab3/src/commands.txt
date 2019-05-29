@@ -1,0 +1,19 @@
+cd os_lab_2019/lab3/src
+
+task1
+
+gcc find_min_max.c sequential_min_max.c utils.c -o sequential_min_max1
+./sequential_min_max1 5 14
+
+task 2
+
+gcc parallel_min_max.c utils.c find_min_max.c -o parallel_min_max1
+
+./parallel_min_max1 --seed 444 --array_size 10 --pnum 4
+./parallel_min_max1 --seed 444 --array_size 10 --pnum 4 -f
+
+
+
+
+//tests: tests.c
+	$(CC) -o Utests find_min_max.h find_min_max.c tests.c utils.c utils.h -lcunit
