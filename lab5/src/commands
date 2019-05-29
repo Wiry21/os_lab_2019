@@ -1,0 +1,3 @@
+cd os_lab_2019/lab5/src
+
+./modfact --k 5 --pnum 3 --mod 18

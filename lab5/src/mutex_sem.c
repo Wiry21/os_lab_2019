@@ -6,13 +6,24 @@
  *     O'Reilly & Associates, Inc.
  *  Modified by A.Kostin
  ********************************************************
- * mutex.c
+ * mutex_s.c
  *
  * Simple multi-threaded example with a mutex lock.
  */
+#include <stdbool.h>
+#include <sys/time.h>
+#include <getopt.h>
+
+#include <stdint.h>
+
+#include <pthread.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <semaphore.h>
 #include <stdlib.h>
 
 void do_one_thing(int *);
@@ -23,7 +34,23 @@ int r1 = 0, r2 = 0, r3 = 0;
 int state;
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 
+    sem_t *sem;
+
 int main(int c, int* a) {
+    
+
+  if( (sem = sem_open("/my_sem", O_CREAT, 0777, 1)) == SEM_FAILED){
+        printf("error semophore!!!\n");
+        return 1;
+  }
+  sem_post(sem);
+  int value_sem=0;
+  if(sem_getvalue(sem, &value_sem) != 0){
+        printf("error semophore sem_getvalue!!!\n");
+        return 1;
+  };
+  printf("sem_getvalue = %d\n", value_sem);
+    
   pthread_t thread1, thread2;
 	state = c;
   if (pthread_create(&thread1, NULL, (void *)do_one_thing,
@@ -49,6 +76,8 @@ int main(int c, int* a) {
   }
 
   do_wrap_up(common);
+  
+sem_close(sem);
 
   return 0;
 }
@@ -59,7 +88,8 @@ void do_one_thing(int *pnum_times) {
   int work;
   for (i = 0; i < 50; i++) {
 	if(state > 0)
-    	pthread_mutex_lock(&mut);
+	 sem_wait(sem);
+  //  	pthread_mutex_lock(&mut);
     printf("doing one thing\n");
     work = *pnum_times;
     printf("counter = %d\n", work);
@@ -68,7 +98,8 @@ void do_one_thing(int *pnum_times) {
       ;                 /* long cycle */
     *pnum_times = work; /* write back */
 	if(state > 0)
-		 pthread_mutex_unlock(&mut);
+    	sem_post(sem);
+	//	 pthread_mutex_unlock(&mut);
   }
 }
 
@@ -78,7 +109,8 @@ void do_another_thing(int *pnum_times) {
   int work;
   for (i = 0; i < 50; i++) {
 	if(state > 0)
-   		 pthread_mutex_lock(&mut);
+    	 sem_wait(sem);
+   		// pthread_mutex_lock(&mut);
     printf("doing another thing\n");
     work = *pnum_times;
     printf("counter = %d\n", work);
@@ -87,7 +119,8 @@ void do_another_thing(int *pnum_times) {
       ;                 /* long cycle */
     *pnum_times = work; /* write back */
 	if(state > 0)
-   		pthread_mutex_unlock(&mut);
+	   sem_post(sem);
+   	//	pthread_mutex_unlock(&mut);
   }
 }
 
