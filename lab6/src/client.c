@@ -19,54 +19,19 @@ struct Server {
   int port;
 };
 
-uint64_t total = 1;
-
-#define mem_block_size 4
-int recognize(char* buff, uint32_t* pos, struct Server* to)
-{
-	char* temp = buff;
-	uint32_t offset = 0;
-	for(int j = 0; j < 3; j++)
-	for(int i = 0; i < 4; i++)
-	{
-		if((*(temp + offset) >= '0') && (*(temp + offset) <= '9'))
-		{
-			offset++;
-			continue;
-		}
-		if(*(temp + offset) == '.')
-		{
-			offset++;
-			break;
-		}
-		return 1;
-		
-	}
-	for(int i = 0; i < 4; i++)
-	{
-		if((*(temp + offset) >= '0') && (*(temp + offset) <= '9'))
-		{
-			offset++;
-			continue;
-		}
-		if(*(temp + offset) == ':')	break;
-		return 1;
-	}
-	memcpy(&to->ip, temp, offset);
-	to->ip[offset] = '\0';
-	offset++;
-	temp += offset;
-	*pos += offset;
-	offset = 0;
-	while((*(temp + offset) >= '0') && (*(temp + offset) <= '9'))
-		offset++;
-	if((*(temp + offset) != '\n') && (*(temp + offset) != ' '))
-		return 1;
-	temp[offset] = '\0';
-	to->port = atoi(temp);
-	*pos += offset;
-	return 0;
+/*
+uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
+  uint64_t result = 0;
+  a = a % mod;
+  while (b > 0) {
+    if (b % 2 == 1)
+      result = (result + a) % mod;
+    a = (a * 2) % mod;
+    b /= 2;
+  }
+  return result % mod;
 }
+*/
 
 bool ConvertStringToUI64(const char *str, uint64_t *val) {
   char *end = NULL;
@@ -86,7 +51,8 @@ bool ConvertStringToUI64(const char *str, uint64_t *val) {
 int main(int argc, char **argv) {
   uint64_t k = -1;
   uint64_t mod = -1;
-  char servers[255] = {'\0'}; // TODO: explain why 255
+  uint64_t fork_flag = 0;
+  char servers[255] = {'\0'}; // TODO: explain why 255 = т.к. блок ip = 1 - 255, т.е. у нас всего 255 в локальной сети адресов
 
   while (true) {
     int current_optind = optind ? optind : 1;
@@ -94,6 +60,7 @@ int main(int argc, char **argv) {
     static struct option options[] = {{"k", required_argument, 0, 0},
                                       {"mod", required_argument, 0, 0},
                                       {"servers", required_argument, 0, 0},
+                                      {"fork_flag", required_argument, 0, 0},
                                       {0, 0, 0, 0}};
 
     int option_index = 0;
@@ -107,16 +74,26 @@ int main(int argc, char **argv) {
       switch (option_index) {
       case 0:
         ConvertStringToUI64(optarg, &k);
-	if(k == 0)
-		k = -1;
+        // TODO: your code here
+        if(k<0){
+            printf("error k must be > 0 !\n");
+            return 1;
+        }
         break;
       case 1:
         ConvertStringToUI64(optarg, &mod);
-		
+        // TODO: your code here
+        if(mod<0){
+            printf("error mod must be > 0 !\n");
+            return 1;
+        }
         break;
       case 2:
         // TODO: your code here
         memcpy(servers, optarg, strlen(optarg));
+        break;
+      case 3:
+        ConvertStringToUI64(optarg, &fork_flag);
         break;
       default:
         printf("Index %d is out of options\n", option_index);
@@ -137,47 +114,54 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  //количество серверов
+  unsigned int servers_num = 0;
+  for(int i=0;i<255;i++){
+      if(servers[i] == ':')
+        servers_num++;
+  }
+  printf("servers_num %d \n", servers_num);
   // TODO: for one server here, rewrite with servers from file
+  //unsigned int servers_num = 1;
+  struct Server *to = malloc(sizeof(struct Server) * servers_num);
+  //разбитие файла servers
+  char * sPoint1=servers;
+  char * sPoint2=servers;
+  for(int i=0; i<servers_num; i++){
+      for(int j=0;j<255;j++){
+          if(sPoint1[j] == ':'){
+              sPoint2=&(sPoint1[j]);
+              break;
+          }
+          if(sPoint1[j] == '\0'){
+              printf("error servers ; or : \n");
+              return -1;
+          }
+      }
+      memcpy(to[i].ip, sPoint1, sizeof(char)*(sPoint2-sPoint1));
+      sPoint1=(sPoint2+1);//след после :
+      for(int j=0;j<255;j++){
+          if(sPoint1[j] == ';'){
+              sPoint2=&(sPoint1[j]);
+              break;
+          }
+          if(sPoint1[j] == '\0'){
+              printf("error servers ; or : \n");
+              return -1;
+          }
+      }
+      *(sPoint2)='\0';
+      to[i].port = atoi(sPoint1);
+      sPoint1=sPoint2+1;
+  }
   // TODO: delete this and parallel work between servers
-	FILE* f = fopen(servers, "rb");
-	if(!f)
-	{
-		printf("server file error!\n");
-		return 1;
-	}
-  	struct Server *to = malloc(sizeof(struct Server) * mem_block_size);
-	uint32_t pos = 0;
-	char buff[24];
-	uint32_t mem_serv_counter = 1;
-	uint32_t nserv = 0;
-	while(!feof(f) || (nserv > k))
-	{
-		if(nserv == (mem_block_size*mem_serv_counter))
-		{
-			mem_serv_counter++;
-			to = (struct Server *) realloc(to, mem_block_size*mem_serv_counter*sizeof(struct Server));
-		}
-		fseek(f, pos, SEEK_SET);
-		if(fread(&buff, 1, 24, f) == 0)
-		{
-			printf("rw file error!\n");
-			fclose(f);
-			return 1;
-		}
-		if(recognize(buff, &pos, to + nserv))
-		{
-			fclose(f);
-			printf("file format error!\n");
-			return 1;
-		}
-		pos++;
-		nserv++;
-	}
-	fclose(f);
-	to = (struct Server *) realloc(to, nserv*sizeof(struct Server));
+  //to[0].port = 20001;
+  //memcpy(to[0].ip, "127.0.0.1", sizeof("127.0.0.1"));
 
   // TODO: work continiously, rewrite to make parallel
-  for (int i = 0; i < nserv; i++) {
+  int delta_serv=(k+1)/servers_num;
+  int * sokets = malloc(sizeof(int) * servers_num);
+  for (int i = 0; i < servers_num; i++) {
     struct hostent *hostname = gethostbyname(to[i].ip);
     if (hostname == NULL) {
       fprintf(stderr, "gethostbyname failed with %s\n", to[i].ip);
@@ -190,6 +174,7 @@ int main(int argc, char **argv) {
     server.sin_addr.s_addr = *((unsigned long *)hostname->h_addr);
 
     int sck = socket(AF_INET, SOCK_STREAM, 0);
+    sokets[i] = sck;
     if (sck < 0) {
       fprintf(stderr, "Socket creation failed!\n");
       exit(1);
@@ -202,33 +187,65 @@ int main(int argc, char **argv) {
 
     // TODO: for one server
     // parallel between servers
-    uint64_t begin = i*k/nserv + 1;
-    uint64_t end = (i == (nserv-1)) ? k + 1 : (i+1)*k/nserv + 1;
+    //uint64_t begin = 1;
+    //uint64_t end = k;
+    //delta_serv
+    uint64_t begin = i*delta_serv;
+    if(begin==0)
+        begin=1;
+    uint64_t end = k;
+    if(i<(servers_num-1)){
+        end=(i+1)*delta_serv;
+    }
+    else{
+        end=k;
+    }
 
-    memcpy(buff, &begin, sizeof(uint64_t));
-    memcpy(buff + sizeof(uint64_t), &end, sizeof(uint64_t));
-    memcpy(buff + 2 * sizeof(uint64_t), &mod, sizeof(uint64_t));
+    //char task[sizeof(uint64_t) * 3];
+    char task[sizeof(uint64_t) * 4];
+    memcpy(task, &begin, sizeof(uint64_t));
+    memcpy(task + sizeof(uint64_t), &end, sizeof(uint64_t));
+    memcpy(task + 2 * sizeof(uint64_t), &mod, sizeof(uint64_t));
+    memcpy(task + 3 * sizeof(uint64_t), &fork_flag, sizeof(uint64_t));
 
-    if (send(sck, buff, 3 * sizeof(uint64_t), 0) < 0) {
+    if (send(sck, task, sizeof(task), 0) < 0) {
       fprintf(stderr, "Send failed\n");
       exit(1);
     }
 
-    uint64_t answer = 0;
-    if (recv(sck, (char*)&answer, sizeof(answer), 0) < 0) {
+//ожидание ответа
+    /*
+    char response[sizeof(uint64_t)];
+    if (recv(sck, response, sizeof(response), 0) < 0) {
       fprintf(stderr, "Recieve failed\n");
       exit(1);
     }
-
     // TODO: from one server
     // unite results
-    //memcpy(&answer, response, sizeof(uint64_t));
-	total = MultModulo(total, answer, mod);
+    uint64_t answer = 0;
+    memcpy(&answer, response, sizeof(uint64_t));
+    printf("answer: %llu\n", answer);
     close(sck);
+    */
   }
-    printf("answer: %llu\n", total);
+  
+  
+  uint64_t itog = 1;
+  for(int i=0; i<servers_num; i++){
+    char response[sizeof(uint64_t)];
+    if (recv(sokets[i], response, sizeof(response), 0) < 0) {
+      fprintf(stderr, "Recieve failed\n");
+      exit(1);
+    }
+    uint64_t answer = 0;
+    memcpy(&answer, response, sizeof(uint64_t));
+    printf("answer: %llu\n", answer);
+    itog = MultModulo(itog, answer, mod);
+    close(sokets[i]);
+  }
+  
+  printf("itog: %llu\n", itog);
   free(to);
-	remove(servers);
-
+  free(sokets);
   return 0;
 }

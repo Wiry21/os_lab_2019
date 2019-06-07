@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <getopt.h>
 #include <netinet/in.h>
@@ -11,8 +12,21 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
-#include "multmod.h"
 #include "pthread.h"
+#include "multmod.h"
+
+  const int pidnum = 5;
+//  pid_t child_pid[5];
+  pid_t child_pid;
+ // int f_pipes[5][2];
+  
+  int thisNum = 0;
+  int tnum = -1;
+  pid_t corepid = 0;
+//  bool freepids[5]; 
+  bool Cikl = true;
+  int pidCount = 3;
+  int client_fd = 0;
 
 struct FactorialArgs {
   uint64_t begin;
@@ -20,30 +34,153 @@ struct FactorialArgs {
   uint64_t mod;
 };
 
+/*
+uint64_t MultModulo(uint64_t a, uint64_t b, uint64_t mod) {
+  uint64_t result = 0;
+  a = a % mod;
+  while (b > 0) {
+    if (b % 2 == 1)
+      result = (result + a) % mod;
+    a = (a * 2) % mod;
+    b /= 2;
+  }
+  return result % mod;
+}
+*/
 uint64_t Factorial(const struct FactorialArgs *args) {
   uint64_t ans = 1;
-	for(uint64_t i = args->begin; i < args->end; i++)
-		ans = MultModulo(ans, i, args->mod);
+  // TODO: your code here
+  //+
+  for(uint64_t i = (args->begin); i < (args->end); i++)
+    ans=ans*(i%args->mod);
+   printf("thread ans = %d\n", ans);
   return ans;
 }
 
 void *ThreadFactorial(void *args) {
   struct FactorialArgs *fargs = (struct FactorialArgs *)args;
+  printf("thread server!!!\n");
   return (void *)(uint64_t *)Factorial(fargs);
 }
 
+void ChildFree(int signo)
+{
+    pidCount++;
+}
+
+
+void ExecuteSignal(int signo)
+{
+    printf("Execute   %d\n", thisNum);
+    int soc = client_fd;    
+//    read(f_pipes[thisNum][0], &soc, sizeof(int));
+
+    bool flagStop=true;
+    while (flagStop) {
+      //unsigned int buffer_size = sizeof(uint64_t) * 3;
+      unsigned int buffer_size = sizeof(uint64_t) * 4;
+      char from_client[buffer_size];
+      //читаем вход из сокета client_fd клиента в from_client размером с buffer_size
+      //вернет n байт сколько считали
+       printf("Soc   %d\n", soc);
+      int read = recv(soc, from_client, buffer_size, 0);
+
+      if (!read)
+        break;
+      if (read < 0) {
+        fprintf(stderr, "Client read failed\n");
+        break;
+      }
+      if (read < buffer_size) {
+        fprintf(stderr, "Client send wrong data format\n");
+        break;
+      }
+
+      pthread_t threads[tnum];
+//разбивка всего от клиента
+      uint64_t begin = 0;
+      uint64_t end = 0;
+      uint64_t mod = 0;
+      uint64_t flag_fork = 0;
+      memcpy(&begin, from_client, sizeof(uint64_t));
+      memcpy(&end, from_client + sizeof(uint64_t), sizeof(uint64_t));
+      memcpy(&mod, from_client + 2 * sizeof(uint64_t), sizeof(uint64_t));
+      //
+      memcpy(&flag_fork, from_client + 3 * sizeof(uint64_t), sizeof(uint64_t));
+
+      fprintf(stdout, "Receive: %llu %llu %llu %llu\n", begin, end, mod, flag_fork);
+      
+      
+      
+//fork bil zdes'
+  
+  
+          struct FactorialArgs args[tnum];
+          //вычисляем на сервере
+          int delta = (end+1)/tnum;
+          for (uint32_t i = 0; i < tnum; i++) {
+            // TODO: parallel somehow
+            //мой код
+            args[i].mod=mod;
+            args[i].begin= begin + i*delta;
+            if(args[i].begin==0)
+               args[i].begin=1;
+            if(i<(tnum-1)){
+                args[i].end=(i+1)*delta+1;
+            }
+            else{
+                args[i].end=end+1;
+            }
+            //код препода
+            //args[i].begin = 1;
+            //args[i].end = 1;
+            //args[i].mod = mod;
+    
+            if (pthread_create(&threads[i], NULL, ThreadFactorial,
+                               (void *)&args[i]) != 0) {
+              printf("Error: pthread_create failed!\n");
+              return 1;
+            }
+          }
+    //принимаем результат
+          uint64_t total = 1;
+          for (uint32_t i = 0; i < tnum; i++) {
+            uint64_t result = 0;
+            pthread_join(threads[i], (void **)&result);
+            total = MultModulo(total, result, mod);
+          }
+    
+          printf("Total: %llu\n", total);
+    
+          char buffer[sizeof(total)];
+          memcpy(buffer, &total, sizeof(total));
+          //отправляем результат клиенту
+          send(soc, buffer, sizeof(total), 0);
+
+          //конец сервера       
+          flagStop=false;
+          printf("child end \n"); 
+    }
+    //уведомляем об окончании, усыпить клиента
+    shutdown(soc, SHUT_RDWR);
+    //закрываемся
+    close(soc);
+kill(corepid,SIGUSR1);
+    Cikl=false;
+}
+
+
 int main(int argc, char **argv) {
-  int tnum = -1;
+
+signal(SIGUSR1,ChildFree);
   int port = -1;
-
-  char servers[255] = {'\0'}; // TODO: explain why 255
-
+  corepid = getpid();
+ 
   while (true) {
     int current_optind = optind ? optind : 1;
 
     static struct option options[] = {{"port", required_argument, 0, 0},
                                       {"tnum", required_argument, 0, 0},
-                                      {"servers", required_argument, 0, 0},
                                       {0, 0, 0, 0}};
 
     int option_index = 0;
@@ -61,12 +198,7 @@ int main(int argc, char **argv) {
         break;
       case 1:
         tnum = atoi(optarg);
-	if(tnum < 1)
-		tnum = -1;
-        break;
-      case 2:
         // TODO: your code here
-        memcpy(servers, optarg, strlen(optarg));
         break;
       default:
         printf("Index %d is out of options\n", option_index);
@@ -85,34 +217,28 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Using: %s --port 20001 --tnum 4\n", argv[0]);
     return 1;
   }
-
+//создаем сокет, получаем его id
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {
     fprintf(stderr, "Can not create server socket!");
     return 1;
   }
-	
-	FILE* f = fopen(servers, "ab");
-	flockfile(f);
-	fprintf(f, "%s:%i\n", "127.0.0.1", port);
-	printf("%s:%i\n", "127.0.0.1", port);
-	funlockfile(f);
-	fclose(f);
 
   struct sockaddr_in server;
   server.sin_family = AF_INET;
   server.sin_port = htons((uint16_t)port);
   server.sin_addr.s_addr = htonl(INADDR_ANY);
 
+//устанавливаем флаг игнора TIME_WAIT состояние сервера (для соединения, что бы не получить ошибку)
   int opt_val = 1;
   setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof(opt_val));
-
+//привязываем адрес к сокету
   int err = bind(server_fd, (struct sockaddr *)&server, sizeof(server));
   if (err < 0) {
     fprintf(stderr, "Can not bind to socket!");
     return 1;
   }
-
+//слушаем сокет, 128 = максимальная длина очереди
   err = listen(server_fd, 128);
   if (err < 0) {
     fprintf(stderr, "Could not listen on socket\n");
@@ -120,80 +246,126 @@ int main(int argc, char **argv) {
   }
 
   printf("Server listening at %d\n", port);
+  bool flagEnd=true;
+  bool ListenFlag = true;
+  
+  // fork
+/*    
+  for (int i=0; i<pidnum; i++) 
+  {
+        pipe(f_pipes[i]);
+  }
+ */
+   bool flag_fork_end=true;
 
-  while (true) {
+          //делаем форк
+          flag_fork_end=false;
+                  /*
+           
+           for (int i=0;i<pidnum;i++)
+           {
+               freepids[i] = true;
+               child_pid[i] = fork();
+               if(child_pid[i] < 0){
+                    printf("Error: fork failed!\n");
+                    return -1;
+               }
+               if(child_pid[i] == 0){
+                   flag_fork_end = true;
+                   ListenFlag = false;
+                   thisNum = i;
+                   signal(SIGUSR1,ExecuteSignal);
+                   sigset_t set; 
+                   sigemptyset(&set);
+                   sigaddset(&set, SIGUSR1);
+                   int sigw=0;
+                   printf("Child wait   %d\n", thisNum);
+              while (true)
+                   {
+                       printf("Child wait   %d\n", thisNum);
+             //  sigwait(&set,&sigw);
+              sleep(10);
+                   printf("Child dont wait   %d\n", thisNum);
+                  }
+     
+                   break;
+               }
+       }
+  */
+  /*
+  for(int i=0; i<pidnum;i++)
+  {
+       freepids[i] = true;
+       
+  }
+  */
+//цикл прослушки
+    if (ListenFlag == true)
+    {
+        printf("Listening   %d\n", port);
+        flagEnd = true;
+    while (flagEnd) {
+        printf("Listening  2 %d\n", port);
     struct sockaddr_in client;
     socklen_t client_len = sizeof(client);
-    int client_fd = accept(server_fd, (struct sockaddr *)&client, &client_len);
-
-    if (client_fd < 0) {
-      fprintf(stderr, "Could not establish new connection\n");
-      continue;
-    }
-
-    while (true) {
-      unsigned int buffer_size = sizeof(uint64_t) * 3;
-      char from_client[buffer_size];
-      int read = recv(client_fd, from_client, buffer_size, 0);
-
-      if (!read)
-        break;
-      if (read < 0) {
-        fprintf(stderr, "Client read failed\n");
-        break;
-      }
-      if (read < buffer_size) {
-        fprintf(stderr, "Client send wrong data format\n");
-        break;
-      }
-
-      pthread_t threads[tnum];
-
-      uint64_t begin = 0;
-      uint64_t end = 0;
-      uint64_t mod = 0;
-      memcpy(&begin, from_client, sizeof(uint64_t));
-      memcpy(&end, from_client + sizeof(uint64_t), sizeof(uint64_t));
-      memcpy(&mod, from_client + 2 * sizeof(uint64_t), sizeof(uint64_t));
-
-      fprintf(stdout, "Receive: %llu %llu %llu\n", begin, end, mod);
-	uint64_t dx = (end - begin)/tnum;
-
-      struct FactorialArgs args[tnum];
-      for (uint32_t i = 0; i < tnum; i++) {
-        // TODO: parallel somehow
-        args[i].begin = begin + i*dx;
-        args[i].end   = (i == (tnum - 1)) ? end : begin + (i+1)*dx;
-        args[i].mod   = mod;
-
-        if (pthread_create(&threads[i], NULL, ThreadFactorial,
-                           (void *)&args[i])) {
-          printf("Error: pthread_create failed!\n");
-          return 1;
+    //берем из очереди с адресом другой стороны и принимаем сокет клиента
+     client_fd = accept(server_fd, (struct sockaddr *)&client, &client_len);
+printf("Accept   %d\n", client_fd);
+        if (client_fd < 0) {
+          fprintf(stderr, "Could not establish new connection\n");
+          continue;
         }
-      }
+ //       int j=0;
+ /*       for (j=0;j<pidnum-1;j++)
+        {
+             if (freepids[j]==true)
+              break;
+              
+        }
+        */
+//if(pidCount == 0) бывают ошибки
+if (false)
+{
+        //уведомляем об окончании, усыпить клиента
+    shutdown(client_fd, SHUT_RDWR);
+    //закрываемся
+    close(client_fd);
 
-      uint64_t total = 1;
-      for (uint32_t i = 0; i < tnum; i++) {
-        uint64_t result = 0;
-        pthread_join(threads[i], (void **)&result);
-        total = MultModulo(total, result, mod);
-      }
+}
+else {
+  //      freepids[j] = false;
+  pidCount--;
+        child_pid=fork();
+        if(child_pid == 0){
+                   flag_fork_end = true;
+                   ListenFlag = false;
+                   thisNum = 0;
+                   signal(SIGUSR1,ExecuteSignal);
+                   sigset_t set; 
+                   sigemptyset(&set);
+                   sigaddset(&set, SIGUSR1);
+                   int sigw = 0;
+                   printf("Child wait   %d\n", thisNum);
+              while (Cikl)
+                   {
+                       printf("Child wait   %d\n", thisNum);
+             //  sigwait(&set,&sigw);
+              sleep(10);
+                   printf("Child dont wait   %d\n", thisNum);
+                  }   
+               }
+               else
+               {
+               sleep(2);
+             //       write(f_pipes[j][1], &client_fd, sizeof(int));
+               //     printf("Kill to    %d\n", j);
+                    kill(child_pid,SIGUSR1);    
+            }
 
-      printf("%llu, %llu; Total: %llu\n", begin, end, total);
-
-      char buffer[sizeof(total)];
-      memcpy(buffer, &total, sizeof(total));
-      err = send(client_fd, buffer, sizeof(total), 0);
-      if (err < 0) {
-        fprintf(stderr, "Can't send data to client\n");
-        break;
-      }
     }
 
-    shutdown(client_fd, SHUT_RDWR);
-    close(client_fd);
-  }
-
+     }
+    }
+printf("server close! \n");
   return 0;
 }

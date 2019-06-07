@@ -4,10 +4,11 @@ CFLAGS=-I.
 all : server client
 
 server : server.c
-	$(CC) -lpthread -o server server.c -L. -lmultmod $(CFLAGS)
+	$(CC) server.c -o server  -lpthread  -L. -lmultmod $(CFLAGS)
 
 client : client.c
-	$(CC) -o client client.c -L. -lmultmod $(CFLAGS)
+	$(CC) client.c -o client  -L. -lmultmod $(CFLAGS)
 
 clean :
 	rm -f client server
+	
